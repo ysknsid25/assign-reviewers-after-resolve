@@ -1,0 +1,35 @@
+name: Auto-assign reviewers after resolve
+
+on:
+    pull_request:
+        types: [labeled]
+
+permissions:
+    pull-requests: write
+    contents: read
+
+jobs:
+    assign:
+        # Optional: guard at the job level too, so the job is skipped entirely
+        # when a different label is applied (avoids consuming runner minutes).
+        if: github.event.label.name == 'ReviewReady'
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            # Required: the action reads the reviewers file from the checked-out tree.
+            - uses: actions/checkout@v4
+
+            - uses: ysknsid25/assign-reviewers-after-resolve@v1
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  # Path to a CODEOWNERS-compatible file in your repository.
+                  reviewers-file: .github/REVIEWERS
+                  # Label that triggers the assignment (default: ReviewReady).
+                  trigger-label: ReviewReady
+                  # Comma-separated bot/user logins to exclude from thread counting
+                  # and from being auto-assigned.
+                  exclude-authors: 'coderabbitai,renovate[bot]'
+                  # "fail" (default) | "warn" | "skip"
+                  on-unresolved: fail
+                  # Uncomment to preview without actually assigning:
+                  # dry-run: 'true'

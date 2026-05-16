@@ -1,0 +1,87 @@
+name: 'Assign Reviewers After Resolve'
+description: 'Assign reviewers from a CODEOWNERS-compatible file once all PR review threads are resolved'
+author: 'Kanon'
+branding:
+  icon: 'user-check'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token with pull-requests: write permission.'
+    required: true
+  reviewers-file:
+    description: 'Path to a CODEOWNERS-compatible file relative to the repository root.'
+    required: false
+    default: '.github/REVIEWERS'
+  trigger-label:
+    description: >
+      Label name that triggers reviewer assignment. The action no-ops when the
+      labeled event does not match this value. Set to an empty string to disable
+      label matching and rely on the workflow `if:` condition instead.
+    required: false
+    default: 'ReviewReady'
+  exclude-authors:
+    description: >
+      Comma-separated logins to exclude from unresolved-thread counting AND from
+      being auto-assigned (in addition to the PR author).
+      Typical use: bot accounts such as "coderabbitai,renovate[bot]".
+    required: false
+    default: ''
+  pr-number:
+    description: 'Pull request number.'
+    required: false
+    default: ${{ github.event.pull_request.number }}
+  pr-author:
+    description: 'Pull request author login.'
+    required: false
+    default: ${{ github.event.pull_request.user.login }}
+  repository:
+    description: 'Target repository in "owner/repo" format.'
+    required: false
+    default: ${{ github.repository }}
+  on-unresolved:
+    description: >
+      Behavior when unresolved threads remain.
+      "fail" exits with an error (default), "warn" logs a warning and exits
+      normally, "skip" silently exits normally.
+    required: false
+    default: 'fail'
+  dry-run:
+    description: 'When "true", log planned assignments without calling the API.'
+    required: false
+    default: 'false'
+  assign-count:
+    description: >
+      Number of reviewers to assign. Use "all" to assign everyone in the reviewers file,
+      or a positive integer to assign that many reviewers picked at random.
+      If the number exceeds the available candidates, all candidates are assigned.
+    required: false
+    default: 'all'
+
+outputs:
+  unresolved-count:
+    description: 'Number of unresolved review threads detected (excluding PR author and excluded accounts).'
+    value: ${{ steps.run.outputs.unresolved_count }}
+  assigned-reviewers:
+    description: 'Comma-separated logins that were newly requested as reviewers.'
+    value: ${{ steps.run.outputs.assigned_reviewers }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: run
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REVIEWERS_FILE: ${{ inputs.reviewers-file }}
+        INPUT_TRIGGER_LABEL: ${{ inputs.trigger-label }}
+        INPUT_EXCLUDE_AUTHORS: ${{ inputs.exclude-authors }}
+        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        INPUT_PR_AUTHOR: ${{ inputs.pr-author }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_ON_UNRESOLVED: ${{ inputs.on-unresolved }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_ASSIGN_COUNT: ${{ inputs.assign-count }}
+        EVENT_LABEL_NAME: ${{ github.event.label.name }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+      run: node "${GITHUB_ACTION_PATH}/dist/main.js"

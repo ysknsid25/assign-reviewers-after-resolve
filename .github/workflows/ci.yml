@@ -1,0 +1,64 @@
+name: CI
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    actionlint:
+        name: actionlint
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+            - uses: raven-actions/actionlint@9fef96a17d8db2cd72745f53e5f9a7cfeb50ebbe # v2.0.0
+
+    lint:
+        name: ESLint
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+              with:
+                  ref: ${{ github.head_ref }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+              with:
+                  node-version-file: .node-version
+                  cache: npm
+            - run: npm ci
+            - run: npm run lint:fix
+            - uses: stefanzweifel/git-auto-commit-action@v5
+              with:
+                  commit_message: "style: apply lint:fix"
+                  commit_options: "--no-verify"
+                  file_pattern: "src/**/*.ts eslint.config.mjs"
+
+    test:
+        name: Vitest
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+              with:
+                  node-version-file: .node-version
+                  cache: npm
+            - run: npm ci
+            - run: npm test
+
+    build:
+        name: Build
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+              with:
+                  node-version-file: .node-version
+                  cache: npm
+            - run: npm ci
+            - run: npm run build
