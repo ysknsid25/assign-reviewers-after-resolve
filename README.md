@@ -84,16 +84,57 @@ See [`examples/caller-workflow.yml`](examples/caller-workflow.yml) for a full an
 
 ## Reviewers file format
 
-The reviewers file uses the same format as GitHub CODEOWNERS:
+The reviewers file uses the same syntax as GitHub CODEOWNERS, but only the **user handles** are honoured — path patterns are accepted for compatibility but ignored at runtime. Every `@username` found anywhere in the file is added to the candidate pool, then filtered down before assignment.
+
+### Minimal example
 
 ```
-# Lines starting with # are comments and are ignored.
-* @user1 @user2
-src/ @user3
+# .github/REVIEWERS
+# Lines starting with `#` are comments. Blank lines are ignored.
+
+@alice
+@bob
+@carol
 ```
 
-- Only **individual user** handles (`@username`) are used; `@org/team` entries are ignored.
-- The file does not need to be `.github/CODEOWNERS`. Using a different name (e.g. `.github/REVIEWERS`) prevents GitHub from auto-assigning reviewers on every PR open, so you can control assignment timing with this action instead.
+### CODEOWNERS-style example (path patterns are tolerated but unused)
+
+```
+# .github/REVIEWERS
+*               @alice @bob
+src/api/        @carol
+src/frontend/   @dave
+```
+
+All four users (`alice`, `bob`, `carol`, `dave`) become candidates regardless of which files the PR touches. If you need per-path routing, layer a separate CODEOWNERS on top — this action does not look at the PR diff.
+
+### Parsing rules
+
+- A line is split into tokens; any token matching `@<name>` is collected.
+  - Valid characters in `<name>`: letters, digits, hyphen, underscore (GitHub username rules).
+- **Individual users** (`@username`) are kept.
+- **Teams** (`@org/team`) are dropped — the GitHub "request reviewer" REST endpoint used by this action takes user logins, not team slugs.
+- **Comments** start with `#` at the beginning of a line. Inline `#` after content is *not* treated as a comment.
+- **Blank lines** are ignored.
+- **Path patterns** at the start of the line (`*`, `src/`, `**/*.ts`, etc.) are parsed away and have no effect — the action does not match paths against the PR's changed files.
+- **Duplicates** across lines are de-duplicated.
+- The leading `@` is required; bare usernames are not recognised.
+
+### Who actually gets assigned
+
+From the parsed user set, the action removes:
+
+1. The PR author (`pr-author`).
+2. Anyone listed in `exclude-authors` (e.g. bots).
+3. Reviewers already requested on the PR.
+
+The remaining candidates are then narrowed by [`assign-count`](#reviewer-assignment-rules) (assign all, or pick N at random).
+
+### File location
+
+- Default path: `.github/REVIEWERS` (override with the `reviewers-file` input).
+- Resolved relative to `GITHUB_WORKSPACE`, so `actions/checkout` must run first.
+- **Do not** name the file `.github/CODEOWNERS` if you want this action to control assignment timing — GitHub auto-requests reviewers from CODEOWNERS the instant a PR is opened, which defeats the "AI review first, human review after" flow this action is designed for.
 
 ## Reviewer assignment rules
 
