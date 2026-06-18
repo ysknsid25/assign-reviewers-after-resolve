@@ -2,7 +2,7 @@
 
 ## Why this action exists
 
-When a PR is opened, AI code review tools such as CodeRabbit and GitHub Copilot start their review immediately — but so does GitHub's built-in reviewer assignment, meaning human reviewers receive a Review Request at the same time as the AI.
+When a PR is opened, AI code review tools such as CodeRabbit and GitHub Copilot start their review immediately but so does GitHub's built-in reviewer assignment, meaning human reviewers receive a Review Request at the same time as the AI.
 
 The desired workflow is:
 
@@ -13,7 +13,7 @@ The desired workflow is:
 
 GitHub provides no native way to implement this flow. Defining reviewers in `.github/CODEOWNERS` causes Review Requests to be sent the moment a PR is opened, with no way to delay until AI feedback has been resolved.
 
-This repository provides a GitHub Action that solves exactly this problem: it waits until all review threads on a PR are resolved, then assigns the designated human reviewers — enabling a clean "AI review first, human review after" workflow.
+This repository provides a GitHub Action that solves exactly this problem: it waits until all review threads on a PR are resolved, then assigns the designated human reviewers enabling a clean "AI review first, human review after" workflow.
 
 A GitHub Composite Action that automatically assigns reviewers from a CODEOWNERS-compatible file once all PR review threads are resolved.
 
@@ -64,7 +64,7 @@ See [`examples/caller-workflow.yml`](examples/caller-workflow.yml) for a full an
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `github-token` | Yes | — | GitHub token with `pull-requests: write` permission. |
+| `github-token` | Yes | | GitHub token with `pull-requests: write` permission. |
 | `reviewers-file` | No | `.github/REVIEWERS` | Path to a CODEOWNERS-compatible file (relative to repo root). |
 | `trigger-label` | No | `ReviewReady` | Label name that triggers assignment. The action no-ops when the event label does not match. Set to empty string to disable label matching. |
 | `exclude-authors` | No | `""` | Comma-separated logins excluded from unresolved-thread counting **and** from being auto-assigned (in addition to the PR author). Useful for bot accounts. |
@@ -84,16 +84,57 @@ See [`examples/caller-workflow.yml`](examples/caller-workflow.yml) for a full an
 
 ## Reviewers file format
 
-The reviewers file uses the same format as GitHub CODEOWNERS:
+The reviewers file uses the same syntax as GitHub CODEOWNERS, but only the **user handles** are honoured path patterns are accepted for compatibility but ignored at runtime. Every `@username` found anywhere in the file is added to the candidate pool, then filtered down before assignment.
+
+### Minimal example
 
 ```
-# Lines starting with # are comments and are ignored.
-* @user1 @user2
-src/ @user3
+# .github/REVIEWERS
+# Lines starting with `#` are comments. Blank lines are ignored.
+
+@alice
+@bob
+@carol
 ```
 
-- Only **individual user** handles (`@username`) are used; `@org/team` entries are ignored.
-- The file does not need to be `.github/CODEOWNERS`. Using a different name (e.g. `.github/REVIEWERS`) prevents GitHub from auto-assigning reviewers on every PR open, so you can control assignment timing with this action instead.
+### CODEOWNERS-style example (path patterns are tolerated but unused)
+
+```
+# .github/REVIEWERS
+*               @alice @bob
+src/api/        @carol
+src/frontend/   @dave
+```
+
+All four users (`alice`, `bob`, `carol`, `dave`) become candidates regardless of which files the PR touches. If you need per-path routing, layer a separate CODEOWNERS on top this action does not look at the PR diff.
+
+### Parsing rules
+
+- A line is split into tokens; any token matching `@<name>` is collected.
+  - Valid characters in `<name>`: letters, digits, hyphen, underscore (GitHub username rules).
+- **Individual users** (`@username`) are kept.
+- **Teams** (`@org/team`) are dropped the GitHub "request reviewer" REST endpoint used by this action takes user logins, not team slugs.
+- **Comments** start with `#` at the beginning of a line. Inline `#` after content is *not* treated as a comment.
+- **Blank lines** are ignored.
+- **Path patterns** at the start of the line (`*`, `src/`, `**/*.ts`, etc.) are parsed away and have no effect the action does not match paths against the PR's changed files.
+- **Duplicates** across lines are de-duplicated.
+- The leading `@` is required; bare usernames are not recognised.
+
+### Who actually gets assigned
+
+From the parsed user set, the action removes:
+
+1. The PR author (`pr-author`).
+2. Anyone listed in `exclude-authors` (e.g. bots).
+3. Reviewers already requested on the PR.
+
+The remaining candidates are then narrowed by [`assign-count`](#reviewer-assignment-rules) (assign all, or pick N at random).
+
+### File location
+
+- Default path: `.github/REVIEWERS` (override with the `reviewers-file` input).
+- Resolved relative to `GITHUB_WORKSPACE`, so `actions/checkout` must run first.
+- **Do not** name the file `.github/CODEOWNERS` if you want this action to control assignment timing GitHub auto-requests reviewers from CODEOWNERS the instant a PR is opened, which defeats the "AI review first, human review after" flow this action is designed for.
 
 ## Reviewer assignment rules
 
@@ -105,7 +146,7 @@ After filtering out the PR author, already-requested reviewers, and any `exclude
 | positive integer (e.g. `2`) | Picks that many reviewers **at random** from the eligible candidates. |
 | integer ≥ candidates count | Falls back to assigning all eligible candidates. |
 
-**Example — assign 2 random reviewers:**
+**Example assign 2 random reviewers:**
 
 ```yaml
 - uses: ysknsid25/assign-reviewers-after-resolve@v1
@@ -129,7 +170,7 @@ permissions:
 
 ### Fork PRs
 
-When triggered by a PR from a fork, the `GITHUB_TOKEN` from a `pull_request` event has **read-only** permissions and cannot write to pull requests. To handle fork PRs, use `pull_request_target` instead — but be aware of the security implications:
+When triggered by a PR from a fork, the `GITHUB_TOKEN` from a `pull_request` event has **read-only** permissions and cannot write to pull requests. To handle fork PRs, use `pull_request_target` instead but be aware of the security implications:
 
 ```yaml
 on:
@@ -158,4 +199,4 @@ uses: ysknsid25/assign-reviewers-after-resolve@v1
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT see [LICENSE](LICENSE).
